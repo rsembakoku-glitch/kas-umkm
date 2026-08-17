@@ -34,7 +34,7 @@ const todayISO = () => {
   const d = new Date();
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
-const uid = () => "tx_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const newTxId = () => "tx_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 function formatRupiah(n) {
   const val = Math.round(Number(n) || 0);
@@ -1239,7 +1239,7 @@ export default function App({ uid, email, onLogout }) {
   const addTx = (partial, newBalances) => {
     const now = new Date();
     const tx = {
-      id: uid(),
+      id: newTxId(),
       jam: now.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }),
       saldoSetelah: { ...newBalances },
       ...partial,
