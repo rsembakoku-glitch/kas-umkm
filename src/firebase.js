@@ -1,10 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
-import { initializeFirestore, persistentLocalCache, persistentSingleTabManager } from "firebase/firestore";
+import { getFirestore } from "firebase/firestore";
 
-// Nilai-nilai ini diambil dari file .env (lihat .env.example).
-// Jangan pernah menaruh kredensial rahasia lain (selain config Firebase Web,
-// yang memang dirancang aman untuk terlihat publik) di file ini.
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -20,9 +17,4 @@ export const missingConfig = Object.entries(firebaseConfig)
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-
-// Firestore dengan cache lokal persisten -> aplikasi tetap bisa dibuka &
-// mencatat transaksi saat offline, lalu otomatis sinkron saat online lagi.
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
-});
+export const db = getFirestore(app);
