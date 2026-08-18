@@ -11,3 +11,11 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     </ErrorBoundary>
   </React.StrictMode>
 );
+
+// Daftarkan service worker supaya situs ini bisa di-"Install" sebagai aplikasi
+// (muncul ikon di home screen, dibuka full-screen tanpa tampilan browser).
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  });
+}
