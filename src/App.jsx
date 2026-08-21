@@ -1,8 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-  ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar,
-} from "recharts";
 import * as XLSX from "xlsx";
 import { doc, onSnapshot, setDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "./firebase";
@@ -27,8 +23,6 @@ const KATEGORI_DANA = [
   { key: "bebas", label: "Dana Bebas", icon: Coins, color: "#a16207" },
 ];
 const KATEGORI_MAP = Object.fromEntries(KATEGORI_DANA.map((k) => [k.key, k]));
-const NEGATIVE_COLOR = "#dc2626";
-
 const pad = (n) => String(n).padStart(2, "0");
 const todayISO = () => {
   const d = new Date();
@@ -407,69 +401,47 @@ function WarningBanner({ warnings }) {
   );
 }
 
-const PIE_COLORS = ["#0f766e", "#0e7490", "#15803d", "#a16207"];
-
-function PieCard({ title, data }) {
-  const total = data.reduce((s, d) => s + Math.abs(d.raw), 0);
-  return (
-    <Card>
-      <SectionTitle>{title}</SectionTitle>
-      {total === 0 ? (
-        <div className="h-48 flex items-center justify-center text-sm text-stone-400">Belum ada data</div>
-      ) : (
-        <div style={{ width: "100%", height: 220 }}>
-          <ResponsiveContainer>
-            <PieChart>
-              <Pie data={data} dataKey="value" nameKey="name" innerRadius={45} outerRadius={80} paddingAngle={2}>
-                {data.map((d, i) => (
-                  <Cell key={i} fill={d.raw < 0 ? NEGATIVE_COLOR : PIE_COLORS[i % PIE_COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(v, n, p) => formatRupiah(p.payload.raw)} />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-    </Card>
-  );
+// Mengelompokkan transaksi per tanggal: total pemasukan hari itu, total
+// pemakaian Dana Bebas hari itu, dan total pengeluaran keseluruhan hari itu.
+function ringkasanPerTanggal(transactions) {
+  const byDate = {};
+  transactions.forEach((t) => {
+    if (!byDate[t.tanggal]) byDate[t.tanggal] = { tanggal: t.tanggal, pemasukan: 0, danaBebasKeluar: 0, pengeluaranTotal: 0 };
+    if (t.jenis === "pemasukan") {
+      byDate[t.tanggal].pemasukan += t.nominalCash + t.nominalRekening;
+    } else if (t.jenis === "pengeluaran") {
+      byDate[t.tanggal].pengeluaranTotal += t.nominal;
+      if (t.kategori === "bebas") byDate[t.tanggal].danaBebasKeluar += t.nominal;
+    }
+  });
+  return Object.values(byDate).sort((a, b) => b.tanggal.localeCompare(a.tanggal));
 }
 
-function TrendCard({ transactions }) {
-  const data = useMemo(() => {
-    const byDate = {};
-    [...transactions]
-      .sort((a, b) => (a.tanggal + a.jam).localeCompare(b.tanggal + b.jam))
-      .forEach((t) => {
-        byDate[t.tanggal] = t.saldoSetelah;
-      });
-    return Object.entries(byDate).map(([tanggal, s]) => ({
-      tanggal: formatTanggalSingkat(tanggal),
-      Total: s.cash + s.rekening,
-      Cash: s.cash,
-      Rekening: s.rekening,
-    }));
-  }, [transactions]);
-
+function RingkasanHarianCard({ transactions, emptyText = "Belum ada transaksi." }) {
+  const data = useMemo(() => ringkasanPerTanggal(transactions), [transactions]);
   return (
     <Card>
-      <SectionTitle icon={FileBarChart}>Perkembangan Saldo Harian</SectionTitle>
+      <SectionTitle icon={History}>Ringkasan per Tanggal</SectionTitle>
       {data.length === 0 ? (
-        <div className="h-56 flex items-center justify-center text-sm text-stone-400">Belum ada data</div>
+        <p className="text-center text-sm text-stone-400 py-6">{emptyText}</p>
       ) : (
-        <div style={{ width: "100%", height: 260 }}>
-          <ResponsiveContainer>
-            <LineChart data={data}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-              <XAxis dataKey="tanggal" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => (v / 1000).toLocaleString("id-ID")} width={50} />
-              <Tooltip formatter={(v) => formatRupiah(v)} />
-              <Legend />
-              <Line type="monotone" dataKey="Total" stroke="#0f766e" strokeWidth={2.5} dot={false} />
-              <Line type="monotone" dataKey="Cash" stroke="#a16207" strokeWidth={1.5} dot={false} />
-              <Line type="monotone" dataKey="Rekening" stroke="#0e7490" strokeWidth={1.5} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+        <div className="space-y-2">
+          {data.map((d) => (
+            <div key={d.tanggal} className="flex items-center justify-between gap-2 py-2.5 border-b border-stone-100 dark:border-stone-800 last:border-0">
+              <div className="shrink-0">
+                <p className="text-sm font-bold text-stone-800 dark:text-stone-100">{formatTanggalSingkat(d.tanggal)}</p>
+                <p className="text-[11px] text-stone-400 capitalize">{hariDari(d.tanggal)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[11px] text-stone-400">Pemasukan</p>
+                <p className="font-mono text-sm font-semibold text-emerald-700 dark:text-emerald-400">{formatRupiah(d.pemasukan)}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[11px] text-stone-400">Pakai Dana Bebas</p>
+                <p className="font-mono text-sm font-semibold text-amber-700 dark:text-amber-400">{formatRupiah(d.danaBebasKeluar)}</p>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </Card>
@@ -478,24 +450,16 @@ function TrendCard({ transactions }) {
 
 function DashboardPage({ balances, transactions }) {
   const warnings = getWarnings(balances);
-  const pieUang = [
-    { name: "Cash", value: Math.abs(balances.cash), raw: balances.cash },
-    { name: "Rekening", value: Math.abs(balances.rekening), raw: balances.rekening },
-  ];
-  const pieDana = KATEGORI_DANA.map((k) => ({ name: k.label, value: Math.abs(balances[k.key]), raw: balances[k.key] }));
   return (
     <div className="space-y-4 pb-4">
       <NeracaEquation balances={balances} />
       <WarningBanner warnings={warnings} />
       <BalanceGrid balances={balances} />
-      <div className="grid md:grid-cols-2 gap-4">
-        <PieCard title="Komposisi Uang Nyata" data={pieUang} />
-        <PieCard title="Komposisi Dana" data={pieDana} />
-      </div>
-      <TrendCard transactions={transactions} />
+      <RingkasanHarianCard transactions={transactions} />
     </div>
   );
 }
+
 
 /* ============================================================
    PEMASUKAN HARIAN
@@ -957,25 +921,7 @@ function LaporanPage({ transactions, onExportExcel }) {
 
   const totalPemasukan = filtered.filter((t) => t.jenis === "pemasukan").reduce((s, t) => s + t.nominalCash + t.nominalRekening, 0);
   const totalPengeluaran = filtered.filter((t) => t.jenis === "pengeluaran").reduce((s, t) => s + t.nominal, 0);
-
-  const barData = useMemo(() => {
-    const byDate = {};
-    filtered.forEach((t) => {
-      byDate[t.tanggal] = byDate[t.tanggal] || { tanggal: formatTanggalSingkat(t.tanggal), Pemasukan: 0, Pengeluaran: 0 };
-      if (t.jenis === "pemasukan") byDate[t.tanggal].Pemasukan += t.nominalCash + t.nominalRekening;
-      if (t.jenis === "pengeluaran") byDate[t.tanggal].Pengeluaran += t.nominal;
-    });
-    return Object.values(byDate).sort((a, b) => a.tanggal.localeCompare(b.tanggal));
-  }, [filtered]);
-
-  const cadanganTrend = useMemo(() => {
-    const byDate = {};
-    [...transactions].filter((t) => t.tanggal <= sampai).sort((a, b) => (a.tanggal + a.jam).localeCompare(b.tanggal + b.jam))
-      .forEach((t) => { byDate[t.tanggal] = t.saldoSetelah; });
-    return Object.entries(byDate).filter(([tgl]) => tgl >= dari).map(([tgl, s]) => ({
-      tanggal: formatTanggalSingkat(tgl), Angsuran: s.angsuran, Gaji: s.gaji, Simpanan: s.simpanan, Bebas: s.bebas,
-    }));
-  }, [transactions, dari, sampai]);
+  const totalDanaBebasKeluar = filtered.filter((t) => t.jenis === "pengeluaran" && t.kategori === "bebas").reduce((s, t) => s + t.nominal, 0);
 
   return (
     <div className="space-y-4 pb-4 print:space-y-2">
@@ -1000,56 +946,22 @@ function LaporanPage({ transactions, onExportExcel }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Card className="!bg-emerald-50 dark:!bg-emerald-950/30 border-emerald-200 dark:border-emerald-900">
-          <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 uppercase mb-1">Total Pemasukan</p>
-          <p className="font-mono font-bold text-lg">{formatRupiah(totalPemasukan)}</p>
+      <div className="grid grid-cols-3 gap-2">
+        <Card className="!p-3 !bg-emerald-50 dark:!bg-emerald-950/30 border-emerald-200 dark:border-emerald-900">
+          <p className="text-[10px] font-semibold text-emerald-700 dark:text-emerald-400 uppercase mb-1">Pemasukan</p>
+          <p className="font-mono font-bold text-sm">{formatRupiah(totalPemasukan)}</p>
         </Card>
-        <Card className="!bg-red-50 dark:!bg-red-950/30 border-red-200 dark:border-red-900">
-          <p className="text-xs font-semibold text-red-700 dark:text-red-400 uppercase mb-1">Total Pengeluaran</p>
-          <p className="font-mono font-bold text-lg">{formatRupiah(totalPengeluaran)}</p>
+        <Card className="!p-3 !bg-red-50 dark:!bg-red-950/30 border-red-200 dark:border-red-900">
+          <p className="text-[10px] font-semibold text-red-700 dark:text-red-400 uppercase mb-1">Pengeluaran</p>
+          <p className="font-mono font-bold text-sm">{formatRupiah(totalPengeluaran)}</p>
+        </Card>
+        <Card className="!p-3 !bg-amber-50 dark:!bg-amber-950/30 border-amber-200 dark:border-amber-900">
+          <p className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 uppercase mb-1">Pakai Dana Bebas</p>
+          <p className="font-mono font-bold text-sm">{formatRupiah(totalDanaBebasKeluar)}</p>
         </Card>
       </div>
 
-      <Card>
-        <SectionTitle>Pemasukan vs Pengeluaran</SectionTitle>
-        {barData.length === 0 ? <div className="h-48 flex items-center justify-center text-sm text-stone-400">Tidak ada data pada periode ini</div> : (
-          <div style={{ width: "100%", height: 240 }}>
-            <ResponsiveContainer>
-              <BarChart data={barData}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                <XAxis dataKey="tanggal" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => (v / 1000).toLocaleString("id-ID")} width={45} />
-                <Tooltip formatter={(v) => formatRupiah(v)} />
-                <Legend />
-                <Bar dataKey="Pemasukan" fill="#0f766e" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Pengeluaran" fill="#dc2626" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </Card>
-
-      <Card>
-        <SectionTitle>Perkembangan Cadangan</SectionTitle>
-        {cadanganTrend.length === 0 ? <div className="h-48 flex items-center justify-center text-sm text-stone-400">Tidak ada data pada periode ini</div> : (
-          <div style={{ width: "100%", height: 240 }}>
-            <ResponsiveContainer>
-              <LineChart data={cadanganTrend}>
-                <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                <XAxis dataKey="tanggal" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => (v / 1000).toLocaleString("id-ID")} width={45} />
-                <Tooltip formatter={(v) => formatRupiah(v)} />
-                <Legend />
-                <Line type="monotone" dataKey="Angsuran" stroke="#0f766e" dot={false} />
-                <Line type="monotone" dataKey="Gaji" stroke="#0e7490" dot={false} />
-                <Line type="monotone" dataKey="Simpanan" stroke="#15803d" dot={false} />
-                <Line type="monotone" dataKey="Bebas" stroke="#a16207" dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </Card>
+      <RingkasanHarianCard transactions={filtered} emptyText="Tidak ada transaksi pada periode ini." />
     </div>
   );
 }
